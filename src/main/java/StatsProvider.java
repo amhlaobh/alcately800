@@ -12,7 +12,6 @@ import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 /**
  * Headless base class to collect statistics from Alcatel Y800 mobile hotspot.
  * Sends stats over the network to a distributed queue where it can be picked
