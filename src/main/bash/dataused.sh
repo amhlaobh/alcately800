@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -o nounset
 set -o errexit
 
@@ -11,7 +11,7 @@ mydir=`dirname $mydir`
 #script=`dirname $0`/${0%%.sh}.pl
 script=${mydir}/${myfile%%.sh}.pl
 #script=`readlink -f ${0%%.sh}.pl`
-curl -s http://add-on.ee.co.uk/status >  ${du}
+#curl -s http://add-on.ee.co.uk/status >  ${du}
 perl ${script} $du
 
 #cat ${du} | perl -ne 'if(m,"duration">([a-zA-Z0-9\.]+?)</span> days,){ print $1; }; if(m,"duration">([0-9]+)</span>(.+),){print " $1 $2";}'

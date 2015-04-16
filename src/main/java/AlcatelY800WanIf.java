@@ -1,12 +1,20 @@
-import java.io.*;
 
-import java.awt.Color;
-import java.awt.TextArea;
+import org.rrd4j.ConsolFun;
+import org.rrd4j.core.RrdDb;
+import org.rrd4j.core.RrdDef;
+import org.rrd4j.core.Sample;
+import org.rrd4j.graph.RrdGraph;
+import org.rrd4j.graph.RrdGraphDef;
+
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-
-
-import javax.swing.JFrame;
+import java.io.File;
+import java.io.IOException;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.TreeSet;
 
 // javac -source 1.6 -target 1.6 AlcatelY800WanIf.java
 
@@ -48,15 +56,23 @@ public class AlcatelY800WanIf extends StatsProvider {
             StatsObject statsObject = app.scrapeIndexPage();
             if (statsObject != null && statsObject.usage >= 0) {
                 app.updateGui(statsObject);
-                try {
-                    callRRD(statsObject, app.rrdfile);
-                } catch (IOException ioe) {
-                    System.err.println("RRD could not be updated: " + ioe);
-                }
+//                app.dataMap.put(sdf.format(statsObject.timestamp), statsObject);
+//                try {
+//                    callRRD(statsObject, app.rrdfile);
+//                } catch (IOException ioe) {
+//                    System.err.println("RRD could not be updated: " + ioe);
+//                }
             }
 
-            app.updateDataFromQueue();
-            
+            try {
+                RrdDb db = app.createRrd();
+                app.createRrdDbFromMap(db);
+                db.close();
+                app.createRrdGraphs(app.createRrdGraphDef());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
             try {
                 Thread.sleep (SLEEP_TIME);
             } catch (InterruptedException inte) {
@@ -81,23 +97,75 @@ public class AlcatelY800WanIf extends StatsProvider {
         jframe.getContentPane().add(textArea);
     }
 
-    private void updateDataFromQueue() {
-        try {
-            if (queue.size() > 0) {
-                StatsObject statsObject = StatsObject.fromString(queue.take());
-                if (statsObject != null) {
-                    if (verbose) {
-                        System.out.printf("Consumed from queue: %s :: %s bytes%n",
-                                sdftime.format(statsObject.timestamp * 1000L), statsObject.usage);
-                    }
-                    callRRD(statsObject, rrdfile);
+    /**
+     * Retrieve usage data from distributed map and feed it into RRD database.
+     * @param rrdDb The rrd4j RRD database object
+     * @throws IOException
+     */
+    private void createRrdDbFromMap(final RrdDb rrdDb) throws IOException {
+        String today = sdf.format(new Date());
+        TreeSet<String> usageData = dataMap.get(today);
+        if (usageData != null) {
+            for (String anUsageData : usageData) {
+                StatsObject statsObject = StatsObject.fromString(anUsageData);
+                if (verbose) {
+                    System.out.printf("%s Consumed from map: %s :: %s :: %s bytes%n",
+                            sdftime.format(new Date()),
+                            statsObject.timestamp,
+                            sdftime.format(statsObject.timestamp * 1000L), statsObject.usage);
                 }
+                addRrdSample(rrdDb, statsObject);
             }
-        } catch(InterruptedException e) {
-            e.printStackTrace();
-        } catch(IOException ioe) {
-            System.err.println("RRD could not be updated from queue: " + ioe);
         }
+    }
+
+    private void addRrdSample(final RrdDb rrdDb, StatsObject statsObject) throws IOException {
+        final Sample sample = rrdDb.createSample();
+//        sample.setTime(statsObject.timestamp);
+        try {
+            String updateStr = String.format("%s:%s:%s", statsObject.timestamp, statsObject.usage, statsObject.usage);
+            sample.setAndUpdate(updateStr);
+        } catch (IllegalArgumentException e) {
+            System.err.println(e);
+        }
+    }
+
+    private RrdDb createRrd() throws IOException {
+        RrdDef rrdDef = new RrdDef(RRD_FILE, 1381816217, 5);
+
+        rrdDef.addDatasource("DS:usage:GAUGE:20:0:U");
+        rrdDef.addDatasource("DS:usageRate:COUNTER:20:0:U");
+
+        rrdDef.addArchive("RRA:AVERAGE:0.5:1:17280");
+        rrdDef.addArchive("RRA:AVERAGE:0.5:1440:112");
+        rrdDef.addArchive("RRA:AVERAGE:0.5:17280:30");
+        rrdDef.addArchive("RRA:MAX:0.5:1:17280");
+        rrdDef.addArchive("RRA:MAX:0.5:1440:112");
+        rrdDef.addArchive("RRA:MAX:0.5:17280:30");
+
+        return new RrdDb(rrdDef);
+    }
+
+    private RrdGraphDef createRrdGraphDef() {
+        RrdGraphDef gDef = new RrdGraphDef();
+        gDef.setWidth(300);
+        gDef.setHeight(100);
+
+        gDef.setFilename("alcatel-abs5min.png");
+        gDef.setStartTime(-60 * 5);
+        gDef.setTitle("Usage");
+        gDef.setVerticalLabel("bytes");
+
+        gDef.datasource("usage", RRD_FILE, "usage", ConsolFun.MAX);
+        gDef.line("usage", Color.GREEN, "Usage");
+
+        gDef.setImageFormat("png");
+
+        return gDef;
+    }
+
+    private void createRrdGraphs(final RrdGraphDef rrdGraphDef) throws IOException {
+        new RrdGraph(rrdGraphDef); // will create the graph in the path specified
     }
 
     /**
@@ -125,7 +193,7 @@ public class AlcatelY800WanIf extends StatsProvider {
             textArea.setBackground(Color.white);
         }
         textArea.setText(String.valueOf(usageDiff / ONE_SECOND + " bytes/sec"));
-        if (verbose) System.out.printf ("Usagediff %d ... ", usageDiff);
+        if (verbose) System.out.printf ("Usagediff %d ...%n", usageDiff);
         return lastUsage;
     }
 

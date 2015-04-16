@@ -40,7 +40,7 @@ public class AnalyseData {
 							String day = sdf.format(new Date(timestamp));
 							if (lastday == null) lastday = day;
                             usage = Long.parseLong(matcher.group(2));
-                            if (usage < lastusage || !day.equals(lastday)) {
+                            if (/*usage < lastusage || */!day.equals(lastday)) {
                                 sum += lastusage;
                                 total += lastusage;
                                 Date date = new Date(lasttimestamp*1000);

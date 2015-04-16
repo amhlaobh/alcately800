@@ -1,14 +1,13 @@
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IQueue;
+import com.hazelcast.core.IMap;
 
 import java.io.*;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,21 +37,22 @@ public class StatsProvider {
     // file prefix for only "usage" data, prepared for input into "rrdtool update":
     private static final String OUTPUT_FILE_COOKED = "wanif.rrdinput";
     // file name of round robin database
-    private static final String RRD_FILE = "alcately800.rrd";
+    static final String RRD_FILE = "alcately800.rrd";
 
     // statistics string pattern from REST return value (JSON)
     private static final Pattern usagePattern = Pattern.compile("\"wan_state\":2.*\"usage\":(\\d+?),");
     // if system property VERBOSE is set, print more information
     static final boolean verbose = isNotNullAndNotEmpty(System.getProperty("VERBOSE"));
     // date formatter in the form 20141230
-    private static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
+    static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
     // date formatter in the form 20141230 12:34:56
     static SimpleDateFormat sdftime = new SimpleDateFormat("yyyyMMdd HH:mm:ss z");
 
     // Hazelcast distributed queue info
     static final String QUEUE_NAME = "y800stats";
+    static final String MAP_NAME = "y800stats";
     private final HazelcastInstance hazelcastInstance = Hazelcast.newHazelcastInstance();
-    final IQueue<String> queue = hazelcastInstance.getQueue( QUEUE_NAME );
+    final IMap<String,TreeSet<String>> dataMap = hazelcastInstance.getMap( MAP_NAME);
 
     private int modemPort = DEFAULT_PORT;
     private String ipAddr = DEFAULT_IP_ADDRESS;
@@ -73,7 +73,7 @@ public class StatsProvider {
 
             StatsObject statsObject = app.scrapeIndexPage();
             if (statsObject != null && statsObject.usage >= 0) {
-                app.updateQueue(statsObject);
+                app.updateMap(statsObject);
             }
 
             try {
@@ -101,17 +101,17 @@ public class StatsProvider {
     }
 
     /**
-     * Sends statsObject to distributed queue.
+     * Sends usage statistics to distributed map.
      */
-    void updateQueue (StatsObject statsObject) {
-        try {
-            if (verbose) {
-                System.out.println ("Sending to queue: " + statsObject);
-            }
-            queue.put(statsObject.toString());
-        } catch (InterruptedException e) {
-            System.err.printf("%s %s Hazelcast queue put was interrupted%n", sdftime.format(new Date()), e);
+    void updateMap (StatsObject statsObject) {
+        String today = sdf.format(statsObject.timestamp * 1000L);
+        if (verbose) {
+            System.out.printf ("Sending to map: %s -> %s", today, statsObject);
         }
+        TreeSet<String> usageValueSet = dataMap.get(today);
+        if (usageValueSet == null) usageValueSet = new TreeSet<String>();
+        usageValueSet.add(statsObject.toString());
+        dataMap.put(today, usageValueSet);
     }
 
     /**
